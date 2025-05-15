@@ -9,7 +9,7 @@ from sqlalchemy.orm import relationship, declarative_base, Mapped, mapped_column
 Base = declarative_base()
 
 if TYPE_CHECKING:
-    from .models import Student, Teacher, Admin, Parent, Fee, AcademicRecord, Attendance, Class, ClassEnrollment
+    from .models import Student, Teacher, Admin, Parent, Fee, AcademicRecord, Attendance, Class, ClassEnrollment, Event, Comment
 
 class Role(str, Enum):
     STUDENT = "student"
@@ -66,6 +66,7 @@ class User(Base):
     teacher: Mapped[Optional["Teacher"]] = relationship(back_populates="user", uselist=False)
     admin: Mapped[Optional["Admin"]] = relationship(back_populates="user", uselist=False)
     parent: Mapped[Optional["Parent"]] = relationship(back_populates="user", uselist=False)
+    comments: Mapped[List["Comment"]] = relationship(back_populates="user")
 
 class Student(Base):
     __tablename__ = "students"
@@ -108,6 +109,7 @@ class Admin(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), unique=True)
     
     user: Mapped["User"] = relationship(back_populates="admin")
+    events: Mapped[List["Event"]] = relationship(back_populates="admin")
 
 class Parent(Base):
     __tablename__ = "parents"
@@ -234,3 +236,28 @@ class ClassEnrollment(Base):
     
     student: Mapped["Student"] = relationship(back_populates="class_enrollments")
     class_: Mapped["Class"] = relationship(back_populates="students")
+    
+class Event(Base):
+    __tablename__ = "events"
+    
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    title: Mapped[str] = mapped_column(String(50))    
+    description: Mapped[str] = mapped_column(String(500))
+    datetime: Mapped[datetime] = mapped_column(DateTime)
+    location: Mapped[Optional[str]] = mapped_column(String(100))
+    admin_id: Mapped[int] = mapped_column(ForeignKey("admins.id"))
+    
+    admin: Mapped["Admin"] = relationship(back_populates="events")
+    comments: Mapped[List["Comment"]] = relationship(back_populates="event")
+    
+class Comment(Base):
+    __tablename__ = "comments"
+    
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    message: Mapped[str] = mapped_column(String(500))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    event_id: Mapped[int] = mapped_column(ForeignKey("events.id"))
+    
+    user: Mapped["User"] = relationship(back_populates="comments")
+    event: Mapped["Event"] = relationship(back_populates="comments")
