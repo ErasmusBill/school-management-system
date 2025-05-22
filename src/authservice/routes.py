@@ -10,6 +10,7 @@ from .utils import create_access_token, create_refresh_token, verify_password
 from datetime import timedelta
 from src.config import Config
 from src.db.redis import redis_service
+import logging
 
 auth_router = APIRouter()
 auth_service = AuthService()
@@ -46,17 +47,29 @@ async def signup(user_data: UserCreate,session: AsyncSession = Depends(get_sessi
             detail=str(e)
         )
 
-@auth_router.post("/admin/users", response_model=UserResponse, status_code=status.HTTP_201_CREATED,dependencies=[Depends(get_current_user)])
-
-async def admin_create_user(user_data: AdminCreateUser,background_tasks: BackgroundTasks,session: AsyncSession = Depends(get_session)):
-    """
-    Admin endpoint to create new users (requires admin privileges)
-    
-    Generates a random password and emails it to the user
-    """
+@auth_router.post("/admin/users", response_model=UserResponse, status_code=201)
+async def admin_create_user(
+    user_data: AdminCreateUser,
+    background_tasks: BackgroundTasks,
+    session: AsyncSession = Depends(get_session)
+):
+    """Create user with admin privileges"""
     try:
-        new_user = await auth_service.create_user_by_admin(user_data, background_tasks, session)
+        # Check if role was provided (if not using default)
+        if not user_data.role:
+            raise HTTPException(
+                status_code=400,
+                detail="Role is required"
+            )
+            
+        # Rest of your implementation...
+        new_user = await auth_service.create_user_by_admin(
+            user_data, 
+            background_tasks, 
+            session
+        )
         return new_user
+        
     except HTTPException as e:
         raise e
     except Exception as e:
@@ -69,24 +82,11 @@ async def admin_create_user(user_data: AdminCreateUser,background_tasks: Backgro
                      400: {"description": "Missing credentials"},
                      401: {"description": "Invalid credentials"}
                  })
-async def login(login_data: LoginModel,session: AsyncSession = Depends(get_session)):
-    """
-    Authenticate user and return JWT tokens
-    
-    - **email**: Registered email address
-    - **password**: Account password
-    
-    Returns:
-    - access_token: Short-lived token for API access
-    - refresh_token: Long-lived token for renewing access
-    """
-    if not login_data.email or not login_data.password:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Email and password are required"
-        )
-    
+@auth_router.post("/login", response_model=TokenResponse)
+async def login(login_data: LoginModel, session: AsyncSession = Depends(get_session)):
+    """Authenticate user and return JWT tokens"""
     try:
+        # Validate credentials
         user = await auth_service.validate_user_credentials(
             login_data.email, 
             login_data.password, 
@@ -98,15 +98,31 @@ async def login(login_data: LoginModel,session: AsyncSession = Depends(get_sessi
                 detail="Invalid credentials"
             )
         
-        tokens = await auth_service.generate_tokens(user)
-        return tokens
-        
-    except HTTPException as e:
-        raise e
+        # Prepare user data for tokens
+        user_data = {
+            "user_id": user.id,
+            "email": user.email,
+            "role": user.role.value
+        }
+
+        # Generate tokens (await the coroutines)
+        access_token = await create_access_token(user_data)
+        refresh_token = await create_refresh_token(user_data)
+
+        return {
+            "access_token": access_token,
+            "refresh_token": refresh_token,
+            "token_type": "bearer",
+            "expires_in": Config.ACCESS_TOKEN_EXPIRE_MINUTES * 60
+        }
+
+    except HTTPException:
+        raise
     except Exception as e:
+        logging.exception("Login failed")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Authentication failed"
         )
 
 @auth_router.post("/logout", status_code=status.HTTP_200_OK,dependencies=[Depends(get_current_user)])

@@ -1,9 +1,12 @@
-from sqlalchemy.ext.asyncio import AsyncSession # type: ignore
-from sqlalchemy import select # type: ignore
-from src.db.models import User
-from .schemas import UserCreate, AdminCreateUser, ChangePasswordModel, UpdateProfileModel
-from fastapi import BackgroundTasks, HTTPException, status
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 from datetime import datetime
+from typing import Optional, Dict, Any
+from fastapi import BackgroundTasks, HTTPException, status
+from pydantic import ValidationError
+
+from src.db.models import User, Role
+from .schemas import UserCreate, AdminCreateUser, ChangePasswordModel, UpdateProfileModel
 from .utils import (
     generate_password_hash,
     generate_password,
@@ -13,7 +16,6 @@ from .utils import (
 )
 from ..mail import send_welcome_email
 from src.db.redis import redis_service
-from typing import Optional, Dict, Any
 from src.config import Config
 
 class AuthService:
@@ -30,90 +32,100 @@ class AuthService:
     async def validate_user_credentials(self, email: str, password: str, session: AsyncSession) -> Optional[User]:
         """Validate user credentials and return user if valid"""
         user = await self.get_user_by_email(email, session)
-        if not user:
-            return None
-        if not verify_password(password, user.password_hash):
+        if not user or not verify_password(password, user.password_hash):
             return None
         return user
     
     async def create_user(self, user_data: UserCreate, session: AsyncSession) -> User:
-        """Create a new user account"""
-        # Validate required fields
-        if not all([user_data.username, user_data.email, user_data.first_name, user_data.last_name]):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="All fields are required"
+        """Create a new user account with STUDENT role by default"""
+        try:
+            if await self.get_user_by_email(user_data.email, session):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="User with this email already exists"
+                )
+
+            # Prepare user data excluding passwords
+            user_data_dict = user_data.model_dump(
+                exclude={'password', 'confirm_password'},
+                exclude_unset=True
             )
-            
-        # Check if user already exists
-        if await self.get_user_by_email(user_data.email, session):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="User with this email already exists"
+
+            # Handle optional contact_number
+            if 'contact_number' in user_data_dict and user_data_dict['contact_number'] is None:
+                del user_data_dict['contact_number']
+
+            new_user = User(
+                **user_data_dict,
+                password_hash=generate_password_hash(user_data.password),
+                role=Role.STUDENT,
+                is_active=True
             )
-            
-        # Validate password
-        if not user_data.password or len(user_data.password) < 8:
+
+            session.add(new_user)
+            await session.commit()
+            await session.refresh(new_user)
+            return new_user
+
+        except ValidationError as e:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Password must be at least 8 characters long"
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=e.errors()
             )
-            
-        # Create user object
-        new_user = User(
-            username=user_data.username,
-            email=user_data.email,
-            first_name=user_data.first_name,
-            last_name=user_data.last_name,
-            password_hash=generate_password_hash(user_data.password),
-            is_active=not user_data.disabled if user_data.disabled is not None else True,
-            date_of_birth=user_data.date_of_birth,
-            contact_number=user_data.contact_number,
-            role=user_data.role if hasattr(user_data, 'role') else 'user'
-        )
-        
-        session.add(new_user)
-        await session.commit()
-        await session.refresh(new_user)
-        return new_user
     
-    async def create_user_by_admin(self, user_data: AdminCreateUser, background_tasks: BackgroundTasks, session: AsyncSession) -> User:
-        """Admin creates a user with auto-generated password"""
-        if await self.get_user_by_email(user_data.email, session):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="User with this email already exists"
-            )
+    async def create_user_by_admin(self, user_data: AdminCreateUser, 
+                                 background_tasks: BackgroundTasks, 
+                                 session: AsyncSession) -> User:
+        """Admin creates a user with specified role and generated password"""
+        try:
+            if await self.get_user_by_email(user_data.email, session):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="User with this email already exists"
+                )
+
+            # Generate random password and hash
+            plain_password = generate_password()
             
-        # Generate random password
-        plain_password = generate_password()
-        
-        new_user = User(
-            username=user_data.username,
-            email=user_data.email,
-            first_name=user_data.first_name,
-            last_name=user_data.last_name,
+            user_data_dict = user_data.model_dump(
+                exclude={'disabled'},  # Exclude unused fields
+                exclude_unset=False
+            )
+
+            new_user = User(
+            username=user_data_dict['username'],
+            email=user_data_dict['email'],
+            first_name=user_data_dict['first_name'],
+            last_name=user_data_dict['last_name'],
+            contact_number=user_data_dict['contact_number'],
+            date_of_birth=user_data_dict['date_of_birth'],
+            role=user_data_dict['role'],  # Now properly included
             password_hash=generate_password_hash(plain_password),
-            is_active=not user_data.disabled if user_data.disabled is not None else True,
-            date_of_birth=user_data.date_of_birth,
-            contact_number=user_data.contact_number,
-            role=user_data.role
-        )
-        
-        session.add(new_user)
-        await session.commit()
-        await session.refresh(new_user)
-        
-        # Send welcome email with generated password
-        background_tasks.add_task(
-            send_welcome_email,
-            email=new_user.email,
-            password=plain_password
-        )
-        
-        return new_user
+            is_active=not user_data.disabled
+            )
+
+
+            session.add(new_user)
+            await session.commit()
+            await session.refresh(new_user)
+            
+            # Send welcome email with plain text password
+            background_tasks.add_task(
+                send_welcome_email,
+                email=new_user.email,
+                password=plain_password
+            )
+            
+            return new_user
+
+        except ValidationError as e:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=e.errors()
+            )
     
-    async def change_password(self, user_data: ChangePasswordModel, user_id: int, session: AsyncSession) -> User:
+    async def change_password(self, user_data: ChangePasswordModel, 
+                            user_id: int, session: AsyncSession) -> User:
         """Change user password and invalidate all existing tokens"""
         user = await self.get_user_by_id(user_id, session)
         if not user:
@@ -122,32 +134,29 @@ class AuthService:
                 detail="User not found"
             )
             
-        # Validate current password
         if not verify_password(user_data.old_password, user.password_hash):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Incorrect current password"
             )
             
-        # Validate new password
         if user_data.new_password != user_data.confirm_password:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="New password and confirmation do not match"
             )
             
-        # Update password
         user.password_hash = generate_password_hash(user_data.new_password)
+        user.updated_at = datetime.utcnow()
         session.add(user)
         await session.commit()
         await session.refresh(user)
         
-        # Invalidate all existing tokens
         await redis_service.revoke_all_tokens(str(user_id))
-        
         return user
     
-    async def update_user_profile(self, user_data: UpdateProfileModel, user_id: int, session: AsyncSession) -> User:
+    async def update_user_profile(self, user_data: UpdateProfileModel, 
+                                user_id: int, session: AsyncSession) -> User:
         """Update user profile information"""
         user = await self.get_user_by_id(user_id, session)
         if not user:
@@ -156,8 +165,12 @@ class AuthService:
                 detail="User not found"
             )
             
-        # Update fields from the request data
-        for field, value in user_data.dict(exclude_unset=True).items():
+        update_data = user_data.model_dump(
+            exclude_unset=True,
+            exclude={'password', 'confirm_password'}  # Prevent accidental password updates
+        )
+        
+        for field, value in update_data.items():
             setattr(user, field, value)
             
         user.updated_at = datetime.utcnow()
@@ -167,11 +180,11 @@ class AuthService:
         return user
     
     async def generate_tokens(self, user: User) -> Dict[str, Any]:
-        """Generate access and refresh tokens for a user"""
+        """Generate access and refresh tokens"""
         user_data = {
+            "sub": str(user.id),
             "email": user.email,
-            "user_id": str(user.id),
-            "role": user.role.value if hasattr(user.role, 'value') else user.role
+            "role": user.role.value
         }
         
         return {
@@ -186,5 +199,5 @@ class AuthService:
         await redis_service.revoke_token(user_id, token)
     
     async def is_token_valid(self, user_id: str, token: str) -> bool:
-        """Check if a token is still valid"""
+        """Check token validity"""
         return await redis_service.is_token_valid(user_id, token)

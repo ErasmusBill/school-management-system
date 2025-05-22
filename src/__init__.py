@@ -6,19 +6,25 @@ from src.admissionservice.routes import admission_router
 
 version = "v1"
 
-
 @asynccontextmanager
-async def life_span(app: FastAPI):
-    print(f"server is starting ...")   
-    await init_db() 
+async def lifespan(app: FastAPI):
+    print("Server is starting...")
+    try:
+        await init_db()
+        print("Database tables created successfully!")
+    except Exception as e:
+        print(f"Error creating database tables: {e}")
+        raise  # Re-raise the exception to fail fast in development
+    
     yield
-    print(f"server is shutting down ...")
+    
+    print("Server is shutting down...")
 
 app = FastAPI(
-    title="school management system",
+    title="School Management System",
     description="A simple school management system API",
-    version="v1",
-    lifespan=life_span
+    version="1.0.0",
+    lifespan=lifespan
 )
 
 app.include_router(auth_router, prefix=f"/{version}/auth", tags=["auth"])

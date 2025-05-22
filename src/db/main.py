@@ -1,25 +1,28 @@
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker # type: ignore
-from sqlalchemy.orm import declarative_base # type: ignore
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
+from sqlalchemy.orm import declarative_base
 from src.config import Config
 
 # Create SQLAlchemy declarative base
 Base = declarative_base()
 
 # Create async engine
+database_url = Config.DATABASE_URL.replace(r'\x3a', ':') if r'\x3a' in Config.DATABASE_URL else Config.DATABASE_URL
+
 async_engine = create_async_engine(
-    Config.DATABASE_URL,
+    database_url,
     echo=True,
     future=True,
-    connect_args={"ssl": True} if Config.DATABASE_URL.startswith("postgres") else {}
+    connect_args={"ssl": True} if "postgres" in database_url.lower() else {}
 )
 
-# Create async session maker
 AsyncSessionLocal = async_sessionmaker(
     bind=async_engine,
     class_=AsyncSession,
     expire_on_commit=False,
     autoflush=False
 )
+
+from src.db.models import *  # Import all models here
 
 async def init_db():
     """Initialize database tables"""
