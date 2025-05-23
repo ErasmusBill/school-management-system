@@ -4,10 +4,10 @@ from enum import Enum
 from typing import Optional, List
 
 class AdmissionStatus(str, Enum):
-    PENDING = "pending"
-    APPROVED = "approved"
-    REJECTED = "rejected"
-    WITHDRAWN = "withdrawn"
+    PENDING = "PENDING"
+    APPROVED = "APPROVED"
+    REJECTED = "REJECTED"
+    WITHDRAWN = "WITHDRAWN"
 
 class FeeType(str, Enum):
     TUITION = "tuition"
@@ -21,6 +21,12 @@ class FeeStatus(str, Enum):
     PAID = "paid"
     OVERDUE = "overdue"
     PARTIAL = "partial"
+
+class Role(str, Enum):
+    STUDENT = "STUDENT"
+    TEACHER = "TEACHER"
+    ADMIN = "ADMIN"
+    PARENT = "PARENT"
 
 class StudentInfo(BaseModel):
     first_name: str = Field(..., example="John")

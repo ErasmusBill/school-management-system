@@ -12,6 +12,7 @@ from .schemas import (
 from .services import AdmissionService
 from src.db.main import get_session
 from typing import List
+from fastapi import BackgroundTasks
 
 admission_router = APIRouter()
 admission_service = AdmissionService()
@@ -22,7 +23,7 @@ admission_service = AdmissionService()
         500: {"description": "Database error"}
     }
 )
-async def purchase_admission(form_data: PurchaseAdmissionFormCreate,session: AsyncSession = Depends(get_session)):
+async def purchase_admission(form_data: PurchaseAdmissionFormCreate,background_tasks:BackgroundTasks,session: AsyncSession = Depends(get_session)):
     """
     Purchase an admission form
     
@@ -32,7 +33,7 @@ async def purchase_admission(form_data: PurchaseAdmissionFormCreate,session: Asy
     - **email**: Email address
     - **amount**: Payment amount
     """
-    return await admission_service.purchase_admission(form_data, session)
+    return await admission_service.purchase_admission(form_data, background_tasks,session)
 
 @admission_router.post("/apply",response_model=ApplicationFormResponse,status_code=status.HTTP_201_CREATED,
     responses={

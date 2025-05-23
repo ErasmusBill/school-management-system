@@ -22,6 +22,66 @@ def generate_password(length: int = 12) -> str:
     """Generate random password"""
     return secrets.token_urlsafe(length)[:length]
 
+import secrets
+import string
+from typing import Optional, Set
+
+def generate_student_enrollment_number(
+    length: int = 10,
+    existing_numbers: Optional[Set[str]] = None,
+    max_attempts: int = 10
+) -> str:
+    """
+    Generates a student enrollment number in STU-XXXXX format.
+    
+    Enhanced version that:
+    - Uses only uppercase letters and digits (no confusing characters)
+    - Guarantees uniqueness against existing numbers
+    - Has configurable length
+    - Includes safety limits
+    
+    Args:
+        length: Length of random part (default 8, min 6)
+        existing_numbers: Set of existing numbers to avoid
+        max_attempts: Maximum generation attempts (default 10)
+        
+    Returns:
+        Enrollment number in format "STU-XXXXXX"
+        
+    Raises:
+        ValueError: If invalid length
+        RuntimeError: If can't generate unique number
+        
+    Example:
+        >>> generate_student_enrollment_number()
+        'STU-A1B2C3D4'
+    """
+    # Validation
+    if length < 6:
+        raise ValueError("Length must be at least 6 characters")
+    if existing_numbers is None:
+        existing_numbers = set()
+    
+    # Character set without confusing characters (no 0/O, 1/I/L etc.)
+    clean_alphabet = (
+        string.ascii_uppercase.replace("O", "").replace("I", "").replace("L", "") + 
+        string.digits.replace("0", "").replace("1", "")
+    )
+    
+    for _ in range(max_attempts):
+        # Generate random part
+        random_part = ''.join(secrets.choice(clean_alphabet) for _ in range(length))
+        enrollment_number = f"STU-{random_part}"
+        
+        # Check uniqueness
+        if enrollment_number not in existing_numbers:
+            return enrollment_number
+    
+    raise RuntimeError(
+        f"Failed to generate unique enrollment number after {max_attempts} attempts. "
+        "Consider increasing length or clearing existing numbers."
+    )
+
 async def create_access_token(user_data: dict, expiry: Optional[timedelta] = None, refresh: bool = False) -> str:
     """Create JWT access token and store in Redis"""
     expires_delta = expiry or timedelta(minutes=Config.ACCESS_TOKEN_EXPIRE_MINUTES)
