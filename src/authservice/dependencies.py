@@ -3,6 +3,7 @@ from jose import JWTError, jwt # type: ignore
 from src.config import Config
 from src.db.redis import redis_service
 from typing import Optional
+from functools import wraps
 
 async def get_token_from_header(request: Request) -> Optional[str]:
     """Extract JWT token from Authorization header"""
@@ -45,3 +46,31 @@ async def get_current_user(request: Request) -> dict:
             detail="Invalid or expired token"
         )
     return payload["user"]
+
+def role_required(required_role: str):
+    def decorator(func):
+        @wraps(func)
+        async def wrapper(*args, **kwargs):
+            current_user = kwargs.get('current_user') or args[0].user
+            if current_user.get("role") != required_role:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=f"Role {required_role} is required"
+                )
+            return await func(*args, **kwargs)
+        return wrapper
+    return decorator   
+
+def permission_required(required_permission: str):
+    def decorator(func):
+        @wraps(func)
+        async def wrapper(*args, **kwargs):
+            current_user = kwargs.get("current_user") or args[0].user
+            if required_permission not in current_user.get("permissions", []):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=f"Permission {required_permission} is required"
+                )
+            return await func(*args, **kwargs)
+        return wrapper
+    return decorator 

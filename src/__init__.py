@@ -3,6 +3,7 @@ from src.authservice.routes import auth_router
 from src.db.main import init_db
 from contextlib import asynccontextmanager
 from src.admissionservice.routes import admission_router
+from src.admin.routes import admin_router
 
 version = "v1"
 
@@ -29,3 +30,4 @@ app = FastAPI(
 
 app.include_router(auth_router, prefix=f"/{version}/auth", tags=["auth"])
 app.include_router(admission_router, prefix=f"/{version}/admission", tags=["admission"])
+app.include_router(admin_router, prefix=f"/{version}/admin", tags=["admin"])

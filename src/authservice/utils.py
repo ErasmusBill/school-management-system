@@ -6,6 +6,11 @@ import logging
 import jwt
 from src.config import Config
 from src.db.redis import redis_service
+import secrets
+import string
+from typing import Optional, Set,Callable
+from functools import wraps
+from fastapi import HTTPException, status, Depends
 
 # Password hashing context
 passwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -22,9 +27,7 @@ def generate_password(length: int = 12) -> str:
     """Generate random password"""
     return secrets.token_urlsafe(length)[:length]
 
-import secrets
-import string
-from typing import Optional, Set
+
 
 def generate_student_enrollment_number(
     length: int = 10,
@@ -91,6 +94,7 @@ async def create_access_token(user_data: dict, expiry: Optional[timedelta] = Non
         "sub": str(user_data.get("user_id")),  # Standard JWT subject claim
         "email": user_data.get("email"),
         "role": user_data.get("role"),
+        "permissions": user_data.get("permissions", []),
         "exp": expiration,
         "refresh": refresh
     }
@@ -128,7 +132,7 @@ def decode_access_token(token: str) -> Optional[dict]:
     except jwt.InvalidTokenError as e:
         logging.warning(f"Invalid token: {str(e)}")
         return None
-
+    
 async def create_refresh_token(user_data: dict) -> str:
     """Create refresh token with longer expiration"""
     expires_delta = timedelta(days=Config.REFRESH_TOKEN_EXPIRE_DAYS)
