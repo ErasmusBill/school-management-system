@@ -18,16 +18,13 @@ from .schemas import (
 )
 from .dependencies import get_current_user
 from src.config import Config
+from .service import create_access_token, create_refresh_token
 
-# Initialize router and service
+
 auth_router = APIRouter()
 auth_service = AuthService()
 
-@auth_router.post(
-    "/signup", 
-    response_model=UserResponse, 
-    status_code=status.HTTP_201_CREATED,
-    summary="Register new user",
+@auth_router.post("/signup", response_model=UserResponse, status_code=status.HTTP_201_CREATED,summary="Register new user",
     responses={
         201: {"description": "User created successfully"},
         400: {"description": "Invalid input or user already exists"},
@@ -35,10 +32,7 @@ auth_service = AuthService()
         500: {"description": "Internal server error"}
     }
 )
-async def signup(
-    user_data: UserCreate,
-    session: AsyncSession = Depends(get_session)
-) -> UserResponse:
+async def signup(user_data: UserCreate,session: AsyncSession = Depends(get_session)) -> UserResponse:
     """
     Register a new user account
     
@@ -52,18 +46,16 @@ async def signup(
     - **role**: User role (STUDENT, TEACHER, ADMIN)
     
     **Optional fields:**
-    - **contact_number**: Phone number
+    - **contact_number**: Phone numbe'r
     - **date_of_birth**: Birth date
     """
     try:
-        # Validate password strength
-        if not user_data.password or len(user_data.password) < 8:
+        if  not user_data.password or len(user_data.password) < 8:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Password must be at least 8 characters long"
             )
         
-        # Validate password confirmation
         if user_data.password != user_data.confirm_password:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -71,24 +63,33 @@ async def signup(
             )
 
         new_user = await auth_service.create_user(user_data, session)
-        return new_user
+        
+        return UserResponse(
+            id=new_user.id,
+            username=new_user.username,
+            email=new_user.email,
+            first_name=new_user.first_name,
+            last_name=new_user.last_name,
+            contact_number=new_user.contact_number,
+            date_of_birth=new_user.date_of_birth,
+            is_active=new_user.is_active,
+            roles=[role.name.value for role in new_user.roles],
+            created_at=new_user.created_at,
+            updated_at=new_user.updated_at,
+        )
         
     except HTTPException:
         raise
     except Exception as e:
-        logging.exception(f"User registration failed for email: {user_data.email}")
+        logging.exception(f"User registration failed for email: {user_data.email if hasattr(user_data, 'email') else 'unknown'}")
+        # More specific error logging
+        logging.error(f"Registration error details: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Registration failed. Please try again."
         )
 
-
-@auth_router.post(
-    "/admin/users", 
-    response_model=UserResponse, 
-    status_code=status.HTTP_201_CREATED,
-    summary="Admin creates user",
-    dependencies=[Depends(get_current_user)],
+@auth_router.post("/admin/users", response_model=UserResponse,status_code=status.HTTP_201_CREATED,summary="Admin creates user",dependencies=[Depends(get_current_user)],
     responses={
         201: {"description": "User created successfully"},
         400: {"description": "Invalid input or user already exists"},
@@ -98,11 +99,7 @@ async def signup(
         500: {"description": "Internal server error"}
     }
 )
-async def admin_create_user(
-    user_data: AdminCreateUser,
-    background_tasks: BackgroundTasks,
-    current_user: Dict[str, Any] = Depends(get_current_user),
-    session: AsyncSession = Depends(get_session)
+async def admin_create_user(user_data: AdminCreateUser,background_tasks:BackgroundTasks,current_user: Dict[str, Any] = Depends(get_current_user),session: AsyncSession = Depends(get_session)
 ) -> UserResponse:
     """
     Create user account with admin privileges
@@ -153,10 +150,7 @@ async def admin_create_user(
         )
 
 
-@auth_router.post(
-    "/login", 
-    response_model=TokenResponse,
-    summary="User login",
+@auth_router.post("/login", response_model=TokenResponse,summary="User login",
     responses={
         200: {"description": "Login successful"},
         401: {"description": "Invalid credentials"},
@@ -164,9 +158,7 @@ async def admin_create_user(
         500: {"description": "Internal server error"}
     }
 )
-async def login(
-    login_data: LoginModel, 
-    session: AsyncSession = Depends(get_session)
+async def login(login_data: LoginModel, session: AsyncSession = Depends(get_session)
 ) -> TokenResponse:
     """
     Authenticate user and return JWT tokens
@@ -197,13 +189,18 @@ async def login(
         
         if not user.is_active:
             raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Account is disabled. Contact administrator."
-            )
-        
-        # Generate tokens using service method
-        tokens = await auth_service.generate_tokens(user)
-        return tokens
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Account is disabled. Contact administrator."
+        )
+
+        access_token = await create_access_token(user)
+        refresh_token = await create_refresh_token(user)
+        return TokenResponse(
+            access_token=access_token,
+            refresh_token=refresh_token,
+            token_type="bearer",
+            expires_in=3600
+        )
 
     except HTTPException:
         raise
@@ -215,20 +212,13 @@ async def login(
         )
 
 
-@auth_router.post(
-    "/logout", 
-    status_code=status.HTTP_200_OK,
-    summary="User logout",
-    dependencies=[Depends(get_current_user)],
+@auth_router.post("/logout", status_code=status.HTTP_200_OK,summary="User logout",dependencies=[Depends(get_current_user)],
     responses={
         200: {"description": "Logout successful"},
         401: {"description": "Not authenticated"}
     }
 )
-async def logout(
-    request: Request,
-    current_user: Dict[str, Any] = Depends(get_current_user)
-) -> Dict[str, str]:
+async def logout(request: Request,current_user: Dict[str, Any] = Depends(get_current_user)) -> Dict[str, str]:
     """
     Log out current user (invalidates the current access token)
     
@@ -248,19 +238,13 @@ async def logout(
         return {"message": "Logged out"}
 
 
-@auth_router.post(
-    "/logout-all", 
-    status_code=status.HTTP_200_OK,
-    summary="Logout from all devices",
-    dependencies=[Depends(get_current_user)],
+@auth_router.post("/logout-all", status_code=status.HTTP_200_OK,summary="Logout from all devices",dependencies=[Depends(get_current_user)],
     responses={
         200: {"description": "Logout successful"},
         401: {"description": "Not authenticated"}
     }
 )
-async def logout_all(
-    current_user: Dict[str, Any] = Depends(get_current_user)
-) -> Dict[str, str]:
+async def logout_all(current_user: Dict[str, Any] = Depends(get_current_user)) -> Dict[str, str]:
     """
     Log out from all devices (invalidates all tokens for the user)
     
@@ -276,11 +260,7 @@ async def logout_all(
         return {"message": "Logged out from all devices"}
 
 
-@auth_router.post(
-    "/change-password",
-    status_code=status.HTTP_200_OK,
-    summary="Change password",
-    dependencies=[Depends(get_current_user)],
+@auth_router.post("/change-password",status_code=status.HTTP_200_OK,summary="Change password",dependencies=[Depends(get_current_user)],
     responses={
         200: {"description": "Password changed successfully"},
         400: {"description": "Invalid input"},
@@ -289,11 +269,7 @@ async def logout_all(
         500: {"description": "Internal server error"}
     }
 )
-async def change_password(
-    password_data: ChangePasswordModel,
-    current_user: Dict[str, Any] = Depends(get_current_user),
-    session: AsyncSession = Depends(get_session)
-) -> Dict[str, str]:
+async def change_password(password_data: ChangePasswordModel,current_user: Dict[str, Any] = Depends(get_current_user),session: AsyncSession = Depends(get_session)) -> Dict[str, str]:
     """
     Change account password
     
@@ -351,11 +327,7 @@ async def change_password(
         500: {"description": "Internal server error"}
     }
 )
-async def update_profile(
-    profile_data: UpdateProfileModel,
-    current_user: Dict[str, Any] = Depends(get_current_user),
-    session: AsyncSession = Depends(get_session)
-) -> UserResponse:
+async def update_profile(profile_data: UpdateProfileModel,current_user: Dict[str, Any] = Depends(get_current_user),session: AsyncSession = Depends(get_session)) -> UserResponse:
     """
     Update user profile information
     
@@ -385,11 +357,7 @@ async def update_profile(
         )
 
 
-@auth_router.get(
-    "/me", 
-    response_model=UserResponse,
-    summary="Get current user profile",
-    dependencies=[Depends(get_current_user)],
+@auth_router.get("/me", response_model=UserResponse,summary="Get current user profile",dependencies=[Depends(get_current_user)],
     responses={
         200: {"description": "Profile retrieved successfully"},
         401: {"description": "Not authenticated"},
@@ -397,9 +365,7 @@ async def update_profile(
         500: {"description": "Internal server error"}
     }
 )
-async def get_current_user_profile(
-    current_user: Dict[str, Any] = Depends(get_current_user),
-    session: AsyncSession = Depends(get_session)
+async def get_current_user_profile(current_user: Dict[str, Any] = Depends(get_current_user),session: AsyncSession = Depends(get_session)
 ) -> UserResponse:
     """
     Get current authenticated user's profile information
@@ -432,37 +398,26 @@ async def get_current_user_profile(
         )
 
 
-@auth_router.post(
-    "/refresh",
-    response_model=TokenResponse,
-    summary="Refresh access token",
+@auth_router.post("/refresh",response_model=TokenResponse,summary="Refresh access token",
     responses={
         200: {"description": "Token refreshed successfully"},
         401: {"description": "Invalid refresh token"},
         500: {"description": "Internal server error"}
     }
 )
-async def refresh_token(
-    request: Request,
-    session: AsyncSession = Depends(get_session)
-) -> TokenResponse:
+async def refresh_token(request: Request,session: AsyncSession = Depends(get_session)) -> TokenResponse:
     """
     Refresh access token using refresh token
     
     **Requires:** Valid refresh token in request body or Authorization header
     """
-    # This endpoint would need to be implemented in your AuthService
-    # For now, return a not implemented response
     raise HTTPException(
         status_code=status.HTTP_501_NOT_IMPLEMENTED,
         detail="Token refresh endpoint not yet implemented"
     )
 
 
-# Health check endpoint for the auth module
-@auth_router.get(
-    "/health",
-    summary="Auth service health check",
+@auth_router.get("/health",summary="Auth service health check",
     responses={
         200: {"description": "Service is healthy"}
     }

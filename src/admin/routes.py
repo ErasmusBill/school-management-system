@@ -11,32 +11,21 @@ admin_service = AdminService()
 
 @admin_router.get("/admission-request")
 async def get_all_admission_request(
-    admin_id: int,
     session: AsyncSession = Depends(get_session),
     current_user: dict = Depends(get_current_user)
 ):
-    """Get all admission requests"""
-    try:
-        admissions = await admin_service.get_all_admission(admin_id, session)
-        return {"admissions": admissions}
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="An error occurred while fetching admission requests"
-        )
+    # Optionally check if current_user["role"] == "ADMIN"
+    admissions = await AdminService().get_all_admission(current_user, session)
+    return {"admissions": admissions}
 
 @admin_router.get("/get_admission/{admission_id}")
 async def get_admission(
     admission_id: int,
-    admin_id: int,
     session: AsyncSession = Depends(get_session),
     current_user: dict = Depends(get_current_user)
 ):
-    """Get specific admission by ID"""
     try:
-        admission = await admin_service.get_admission_by_id(admin_id, admission_id, session)
+        admission = await AdminService().get_admission_by_id(current_user, admission_id, session)
         return {"admission": admission}
     except HTTPException:
         raise
@@ -49,7 +38,6 @@ async def get_admission(
 @admin_router.post("/verify-admission/{admission_id}")
 async def verify_admission(
     admission_id: int,
-    admin_id: int,
     background_tasks: BackgroundTasks,
     session: AsyncSession = Depends(get_session),
     current_user: dict = Depends(get_current_user)
@@ -57,7 +45,7 @@ async def verify_admission(
     """Verify admission"""
     try:
         result = await admin_service.verify_admission(
-            admin_id, admission_id, background_tasks, session
+            current_user, admission_id, background_tasks, session
         )
         return result
     except HTTPException:
@@ -71,7 +59,6 @@ async def verify_admission(
 @admin_router.post("/decline-admission/{admission_id}")
 async def decline_admission(
     admission_id: int,
-    admin_id: int,
     background_tasks: BackgroundTasks,
     session: AsyncSession = Depends(get_session),
     current_user: dict = Depends(get_current_user)
@@ -79,7 +66,7 @@ async def decline_admission(
     """Decline admission"""
     try:
         result = await admin_service.decline_admission(
-            admin_id, admission_id, background_tasks, session
+            current_user, admission_id, background_tasks, session
         )
         return result
     except HTTPException:
@@ -92,14 +79,13 @@ async def decline_admission(
 
 @admin_router.get("/admission-records")
 async def get_all_admission_records(
-    admin_id: int,
     session: AsyncSession = Depends(get_session),
     current_user: dict = Depends(get_current_user),
     
 ):
     """Get all admission records"""
     try:
-        records = await admin_service.get_all_admission_records(admin_id, session)
+        records = await admin_service.get_all_admission_records(current_user, session)
         return {"records": records}
     except HTTPException:
         raise
@@ -112,14 +98,13 @@ async def get_all_admission_records(
 @admin_router.get("/academic-records/{student_id}")
 async def get_academic_records_by_student(
     student_id: int,
-    admin_id: int,
     session: AsyncSession = Depends(get_session),
     current_user: dict = Depends(get_current_user)
 ):
     """Get academic records for a specific student"""
     try:
         records = await admin_service.get_academic_records_by_admin(
-            admin_id, student_id, session
+            current_user, student_id, session
         )
         return {"records": records}
     except HTTPException:

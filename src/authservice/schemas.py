@@ -31,37 +31,37 @@ class UserBase(BaseModel):
         min_length=3,
         max_length=50,
         pattern=r"^[a-zA-Z0-9_]+$",
-        examples=["john_doe"],
+        examples=["erasmus_bill"],
         description="Unique username containing letters, numbers and underscores"
     )
     email: EmailStr = Field(
         ...,
-        examples=["user@example.com"],
+        examples=["erasmuschawey12345@gmail.com"],
         description="Valid email address"
     )
     first_name: str = Field(
         ...,
         min_length=2,
         max_length=50,
-        examples=["John"],
+        examples=["Erasmus"],
         description="User's first name"
     )
     last_name: str = Field(
         ...,
         min_length=2,
         max_length=50,
-        examples=["Doe"],
+        examples=["Charway"],
         description="User's last name"
     )
     contact_number: Optional[str] = Field(
         None,
         pattern=r"^\+?[1-9]\d{1,14}$",
-        examples=["+1234567890"],
+        examples=["+123209501103"],
         description="Phone number in E.164 format (optional)"
     )
     date_of_birth: Optional[datetime] = Field(
         None,
-        examples=["1990-01-01T00:00:00Z"],
+        examples=["2001-11-21T00:00:00Z"],
         description="User's date of birth (optional)"
     )
 
@@ -92,9 +92,10 @@ class UserCreate(UserBase):
         examples=["STUDENT"],
         description="User's role in the system"
     )
-    
     gender:GenderEnum = Field(...,examples=["MALE", "FEMALE", "OTHER", "PREFER_NOT_TO_SAY"])
 
+    
+    
     @field_validator("password")
     def validate_password_strength(cls, value: str) -> str:
         if len(value) < 8:

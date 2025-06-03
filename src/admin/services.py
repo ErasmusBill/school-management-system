@@ -31,27 +31,32 @@ class AdminService:
             )
         return admin
     
-    async def get_all_admission(self, admin_id: int, session: AsyncSession):
+    async def get_all_admission(self, current_user:dict, session: AsyncSession):
         """Get all admission requests"""
         # Verify admin exists and has permission
-        await self.get_admin_by_id(admin_id, session)
+        
+        if current_user.get("role") != "SUPER_ADMIN":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, 
+                detail="You do not have permission to access this resource"
+            )
         
         query = select(AdmissionForm)
         result = await session.execute(query)
         admissions = result.scalars().all()
-        
-        # Return empty list instead of raising exception
+
         return admissions
     
-    async def get_admission_by_id(self, admin_id: int, admission_id: int, session: AsyncSession):
+    async def get_admission_by_id(self, current_user: dict, admission_id: int, session: AsyncSession):
         """Get admission by ID"""
-        # Verify admin exists and has permission
-        await self.get_admin_by_id(admin_id, session)
-        
+        if current_user.get("role") != "SUPER_ADMIN":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, 
+                detail="You do not have permission to access this resource"
+            )
         query = select(AdmissionForm).where(AdmissionForm.id == admission_id)
         result = await session.execute(query)
         admission = result.scalars().first()
-        
         if not admission:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, 
@@ -59,13 +64,17 @@ class AdminService:
             )
         return admission
     
-    async def verify_admission(self, admin_id: int, admission_id: int, background_tasks: BackgroundTasks, session: AsyncSession):
+    async def verify_admission(self, current_user:dict, admission_id: int, background_tasks: BackgroundTasks, session: AsyncSession):
         """Verify an admission application"""
         # Verify admin exists and has permission
-        await self.get_admin_by_id(admin_id, session)
+        if current_user.get("role") != "SUPER_ADMIN":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, 
+                detail="You do not have permission to access this resource"
+            )
         
         # Get admission (this already includes admin permission check)
-        admission = await self.get_admission_by_id(admin_id, admission_id, session)
+        admission = await self.get_admission_by_id(current_user, admission_id, session)
         
         # Check if admission is already processed
         if admission.status in [AdmissionStatus.VERIFIED, AdmissionStatus.DECLINED]:
@@ -105,13 +114,16 @@ class AdminService:
             }
         }
         
-    async def decline_admission(self, admin_id: int, admission_id: int, background_tasks: BackgroundTasks, session: AsyncSession):
+    async def decline_admission(self, current_user:dict, admission_id: int, background_tasks: BackgroundTasks, session: AsyncSession):
         """Decline an admission application"""
-        # Verify admin exists and has permission
-        await self.get_admin_by_id(admin_id, session)
+        if current_user.get("role") != "SUPER_ADMIN":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, 
+                detail="You do not have permission to access this resource"
+            )
         
         # Get admission (this already includes admin permission check)
-        admission = await self.get_admission_by_id(admin_id, admission_id, session)
+        admission = await self.get_admission_by_id(current_user, admission_id, session)
         
         # Check if admission is already processed
         if admission.status in [AdmissionStatus.VERIFIED, AdmissionStatus.DECLINED]:
@@ -151,10 +163,13 @@ class AdminService:
             }
         }
         
-    async def get_all_admission_records(self, admin_id: int, session: AsyncSession):
+    async def get_all_admission_records(self, current_user:dict, session: AsyncSession):
         """Get all academic records (admission records)"""
-        # Verify admin exists and has permission
-        await self.get_admin_by_id(admin_id, session)
+        if current_user.get("role") != "SUPER_ADMIN":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, 
+                detail="You do not have permission to access this resource"
+            )
         
         query = select(AcademicRecord)
         result = await session.execute(query)
@@ -162,10 +177,13 @@ class AdminService:
         
         return records
         
-    async def get_academic_records_by_admin(self, admin_id: int, student_id: int, session: AsyncSession):
+    async def get_academic_records_by_admin(self, current_user:dict, student_id: int, session: AsyncSession):
         """Get academic records for a specific student"""
-        # Verify admin exists and has permission
-        await self.get_admin_by_id(admin_id, session)
+        if current_user.get("role") != "SUPER_ADMIN":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, 
+                detail="You do not have permission to access this resource"
+            )
         
         # Verify student exists
         student_query = select(Student).where(Student.id == student_id)
@@ -185,9 +203,13 @@ class AdminService:
         
         return records
     
-    async def get_admission_statistics(self, admin_id: int, session: AsyncSession):
+    async def get_admission_statistics(self, current_user:dict, session: AsyncSession):
         """Get admission statistics - bonus method for dashboard"""
-        await self.get_admin_by_id(admin_id, session)
+        if current_user.get("role") != "SUPER_ADMIN":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, 
+                detail="You do not have permission to access this resource"
+            )
         
         # Count admissions by status
         total_query = select(AdmissionForm)

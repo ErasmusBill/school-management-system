@@ -22,7 +22,7 @@ async def verify_and_decode_token(token: str) -> Optional[dict]:
         )
         
         # Verify token exists in Redis
-        user_id = str(payload["user"]["user_id"])
+        user_id = str(payload["sub"])
         if not await redis_service.is_token_valid(user_id, token):
             return None
             
@@ -45,7 +45,7 @@ async def get_current_user(request: Request) -> dict:
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired token"
         )
-    return payload["user"]
+    return payload
 
 def role_required(required_role: str):
     def decorator(func):

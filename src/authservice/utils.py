@@ -85,16 +85,16 @@ def generate_student_enrollment_number(
         "Consider increasing length or clearing existing numbers."
     )
 
-async def create_access_token(user_data: dict, expiry: Optional[timedelta] = None, refresh: bool = False) -> str:
+async def create_access_token(user: dict, expiry: Optional[timedelta] = None, refresh: bool = False) -> str:
     """Create JWT access token and store in Redis"""
     expires_delta = expiry or timedelta(minutes=Config.ACCESS_TOKEN_EXPIRE_MINUTES)
     expiration = datetime.now(timezone.utc) + expires_delta
 
     payload = {
-        "sub": str(user_data.get("user_id")),  # Standard JWT subject claim
-        "email": user_data.get("email"),
-        "role": user_data.get("role"),
-        "permissions": user_data.get("permissions", []),
+        "sub": str(user.id),
+        "email": user.email,
+        "role": user.roles[0].name.value if user.roles else "STUDENT",
+        "permissions": [],  
         "exp": expiration,
         "refresh": refresh
     }
@@ -107,10 +107,10 @@ async def create_access_token(user_data: dict, expiry: Optional[timedelta] = Non
 
     try:
         await redis_service.add_token(
-            user_id=str(user_data.get("user_id")),
+            user_id=str(user.id),
             token=token,
             expires=int(expires_delta.total_seconds())
-        )
+    )
     except Exception as e:
         logging.error(f"Redis token storage failed: {str(e)}")
         # Don't fail if Redis is down, but log it
