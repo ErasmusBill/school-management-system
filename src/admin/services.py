@@ -1,4 +1,4 @@
-from fastapi import status, HTTPException, Depends, BackgroundTasks
+from fastapi import status, HTTPException, Depends, BackgroundTasks, Query
 from src.db.models import *
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, exists, or_
@@ -64,51 +64,75 @@ class AdminService:
             )
         return admission
     
-    async def verify_admission(self, current_user:dict, admission_id: int, background_tasks: BackgroundTasks, session: AsyncSession):
-        """Verify an admission application"""
-        # Verify admin exists and has permission
+    async def verify_admission(self, current_user: dict, admission_id: int, background_tasks: BackgroundTasks,
+                               session: AsyncSession):
+        """Verify an admission application and notify the user by email."""
         if current_user.get("role") != "SUPER_ADMIN":
             raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN, 
+                status_code=status.HTTP_403_FORBIDDEN,
                 detail="You do not have permission to access this resource"
             )
-        
-        # Get admission (this already includes admin permission check)
+
+        # Fetch the admission form
         admission = await self.get_admission_by_id(current_user, admission_id, session)
-        
-        # Check if admission is already processed
-        if admission.status in [AdmissionStatus.VERIFIED, AdmissionStatus.DECLINED]:
+        if not admission:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Admission not found"
+            )
+
+        # Check if already processed
+        if admission.status in [AdmissionStatus.APPROVED, AdmissionStatus.REJECTED]:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Admission is already {admission.status.value.lower()}"
             )
-        
-        # Get user's email associated with this admission
-        query = select(User.email).join(Student).where(Student.id == admission.student_id)
-        result = await session.execute(query)
-        user_email = result.scalar_one_or_none()
-        
-        if not user_email:
+
+        # Defensive: Ensure admission has a student
+        # if not admission.student_id:
+        #     raise HTTPException(
+        #         status_code=status.HTTP_400_BAD_REQUEST,
+        #         detail="Admission has no associated student"
+        #     )
+        # print(f"admission.student_id: {admission.student_id}")    
+
+        # Fetch the student
+        student = await session.get(Student, admission.student_id)
+        if not student or not student.user_id:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, 
-                detail="User email not found"
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Associated student or user not found"
+            )
+        print(f"student: {student}")
+        
+        # Fetch the user
+        user = await session.get(User, student.user_id)
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found"
             )
         
-        # Update the admission status
-        admission.status = AdmissionStatus.VERIFIED
-        await session.commit()
+        print(f"student.user_id: {student.user_id}")
         
+            
+        user_email = user.email
+
+        # Update the admission status
+        admission.status = AdmissionStatus.APPROVED
+        await session.commit()
+
         # Send email notification in the background
         background_tasks.add_task(
             send_approve_admission_email,
             email=user_email,
             admission_id=admission_id
         )
-        
+
         return {
             "message": "Admission approved successfully",
             "admission": {
-                "id": admission.id, 
+                "id": admission.id,
                 "status": admission.status.value,
                 "student_id": admission.student_id
             }
@@ -126,7 +150,7 @@ class AdminService:
         admission = await self.get_admission_by_id(current_user, admission_id, session)
         
         # Check if admission is already processed
-        if admission.status in [AdmissionStatus.VERIFIED, AdmissionStatus.DECLINED]:
+        if admission.status in [AdmissionStatus.APPROVED, AdmissionStatus.REJECTED]:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Admission is already {admission.status.value.lower()}"
@@ -144,7 +168,7 @@ class AdminService:
             )
         
         # Update the admission status
-        admission.status = AdmissionStatus.DECLINED
+        admission.status = AdmissionStatus.REJECTED
         await session.commit()
         
         # Send email notification in the background
@@ -225,10 +249,33 @@ class AdminService:
         declined_count = len(declined_result.scalars().all())
         
         pending_count = total_admissions - verified_count - declined_count
-        
+         
         return {
             "total_admissions": total_admissions,
             "verified": verified_count,
             "declined": declined_count,
             "pending": pending_count
         }
+        
+    async def filter(self,current_user:dict,session:AsyncSession,student_name:Optional[str] = Query(None, description="Search students by name"),limit:int=Query(10,ge=1,le=100),offset:int=Query(0,ge=0)) -> List[Student]:
+        
+        if current_user.get("role") != "SUPER_ADMIN":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, 
+                detail="You do not have permission to access this resource"
+            )
+        
+        statement = select(Student)
+        
+        if student_name:
+            statement = statement.where(Student.first_name.ilike(f"%{student_name}%"))
+            
+        result = await session.execute(statement)
+        
+        students = result.scalars().all()
+        if not students:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, 
+                detail="No students found"
+            )
+        return students    

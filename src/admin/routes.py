@@ -51,6 +51,9 @@ async def verify_admission(
     except HTTPException:
         raise
     except Exception as e:
+        import traceback
+        print("Exception occurred:", str(e))
+        traceback.print_exc()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An error occurred while verifying the admission"
@@ -113,4 +116,21 @@ async def get_academic_records_by_student(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An error occurred while fetching academic records"
+        )
+        
+        
+@admin_router.get("/search")
+async def filter(student_name:str,current_user:dict = Depends(get_current_user),session:AsyncSession = Depends(get_session)):
+    """
+    Filter students by name
+    """
+    try:
+        students = await admin_service.filter(student_name, current_user, session)
+        return {"students": students}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An error occurred while filtering students"
         )
